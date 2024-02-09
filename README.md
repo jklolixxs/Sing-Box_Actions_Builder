@@ -3,8 +3,8 @@
 - 本教程教您如何使用GitHub Actions 全自动构建Sing-Box Docker镜像 与 仓库Releases发布
 
 ## 目前Docker镜像 / Releases版本：
- - ### **latest**: v1.8.5
- - ### **dev-next**: v1.9.0-alpha.1
+ - ### **latest**: v1.8.3
+ - ### **dev-next**: v1.9.0-alpha.4
 
 # 教程
 ## 1. fork仓库
