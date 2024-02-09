@@ -260,7 +260,7 @@ jobs:
           platforms: linux/i386, linux/amd64, linux/arm/v7, linux/arm64
           build-args: BRANCH=${{ env.VERSION }}
           tags: |
-            ${{ env.DOCKERHUB_REPOSITORY }}:latest
+            ${{ env.DOCKERHUB_REPOSITORY }}:dev-next
             ${{ env.DOCKERHUB_REPOSITORY }}:${{ env.VERSION }}
   # =============================================================================================================================================================================================
   Build-dev-next-releases:
