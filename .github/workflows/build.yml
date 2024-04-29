@@ -1,0 +1,384 @@
+name: "Build main-next and dev-next images & releases"
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 */1 * * *"
+
+permissions:
+  contents: write
+  packages: write
+  actions: write
+
+jobs:
+  Check-version:
+    runs-on: ubuntu-latest
+    name: "Check version"
+    outputs:
+      main_next_now: ${{ steps.get-version.outputs.main_next_now }}
+      main_next_new: ${{ steps.get-version.outputs.main_next_new }}
+      main_next_renew: ${{ steps.get-version.outputs.main_next_renew }}
+      dev_next_now: ${{ steps.get-version.outputs.dev_next_now }}
+      dev_next_new: ${{ steps.get-version.outputs.dev_next_new }}
+      dev_next_renew: ${{ steps.get-version.outputs.dev_next_renew }}
+      commit: ${{ steps.get-version.outputs.commit }}
+      go_version: ${{ steps.get-version.outputs.go_version }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+
+      - name: Check version
+        id: get-version
+        run: |
+          MAIN_NEXT_NOW=$(awk '/latest/{print $NF; exit}' README.md)
+          DEV_NEXT_NOW=$(awk '/dev-next/{print $NF; exit}' README.md)
+
+          LIST=$(wget -qO- --tries=3 "https://api.github.com/repos/SagerNet/sing-box/releases" | awk -F '"' '/tag_name/{print $(NF-1)}')
+          MAIN_NEXT_NEW=$(grep -vm1 '-' <<< "$LIST")
+          DEV_NEXT_NEW=$(grep -m1 '-' <<< "$LIST")
+          GO_VERSION=$(curl -s https://go.dev/VERSION?m=text | awk 'NR==1' | sed 's/^go//')
+
+          echo "MAIN_NEXT_NOW: $MAIN_NEXT_NOW"
+          echo "MAIN_NEXT_NEW: $MAIN_NEXT_NEW"
+          echo "DEV_NEXT_NOW: $DEV_NEXT_NOW"
+          echo "DEV_NEXT_NEW: $DEV_NEXT_NEW"
+
+          if [ "$MAIN_NEXT_NOW" != "$MAIN_NEXT_NEW" ]; then
+            MAIN_NEXT_RENEW=1
+          fi
+          if [ "$DEV_NEXT_NOW" != "$DEV_NEXT_NEW" ]; then
+            DEV_NEXT_RENEW=1
+          fi
+
+          if [ "$MAIN_NEXT_NOW" != "$MAIN_NEXT_NEW" ]; then
+            echo "main_next_now=$MAIN_NEXT_NOW" >> $GITHUB_OUTPUT
+            echo "main_next_new=$MAIN_NEXT_NEW" >> $GITHUB_OUTPUT
+            echo "main_next_renew=$MAIN_NEXT_RENEW" >> $GITHUB_OUTPUT
+            echo "go_version=$GO_VERSION" >> $GITHUB_OUTPUT
+          fi
+          if [ "$DEV_NEXT_NOW" != "$DEV_NEXT_NEW" ]; then
+            echo "dev_next_now=$DEV_NEXT_NOW" >> $GITHUB_OUTPUT
+            echo "dev_next_new=$DEV_NEXT_NEW" >> $GITHUB_OUTPUT
+            echo "dev_next_renew=$DEV_NEXT_RENEW" >> $GITHUB_OUTPUT
+          fi
+
+          DATE=$(date "+%Y/%m/%d")
+          if [[ "$MAIN_NEXT_RENEW" == '1' && "$DEV_NEXT_RENEW" == '1' ]]; then
+            COMMIT="Build to $MAIN_NEXT_NEW and $DEV_NEXT_NEW by Github Actions, $DATE"
+            echo "commit=$COMMIT" >> $GITHUB_OUTPUT
+          elif [ "$MAIN_NEXT_RENEW" == '1' ]; then
+            COMMIT="Build to $MAIN_NEXT_NEW by Github Actions, $DATE"
+            echo "commit=$COMMIT" >> $GITHUB_OUTPUT
+          elif [ "$DEV_NEXT_RENEW" == '1' ]; then
+            COMMIT="Build to $DEV_NEXT_NEW by Github Actions, $DATE"
+            echo "commit=$COMMIT" >> $GITHUB_OUTPUT
+          fi
+  # =============================================================================================================================================================================================
+  Create-release:
+    needs: Check-version
+    runs-on: ubuntu-latest
+    name: "Create release"
+    env:
+      MAIN_NEXT_VERSION: ${{ needs.Check-version.outputs.main_next_new }}
+      MAIN_NEXT_RENEW: ${{ needs.Check-version.outputs.main_next_renew }}
+      DEV_NEXT_VERSION: ${{ needs.Check-version.outputs.dev_next_new }}
+      DEV_NEXT_RENEW: ${{ needs.Check-version.outputs.dev_next_renew }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+
+      - name: Create main-next release
+        if: ${{ env.MAIN_NEXT_RENEW == '1' }}
+        uses: shogo82148/actions-create-release@v1.6.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ env.MAIN_NEXT_VERSION }}
+          release_name: ${{ env.MAIN_NEXT_VERSION }}
+          draft: false
+          prerelease: false
+          overwrite: true
+
+      - name: Create dev-next release
+        if: ${{ env.DEV_NEXT_RENEW == '1' }}
+        uses: shogo82148/actions-create-release@v1.6.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ env.DEV_NEXT_VERSION }}
+          release_name: ${{ env.DEV_NEXT_VERSION }}
+          draft: false
+          prerelease: true
+          overwrite: true
+  # =============================================================================================================================================================================================
+  Build-main-next-image:
+    needs: Check-version
+    runs-on: ubuntu-latest
+    name: "Build main-next image"
+    env:
+      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+      DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+      DOCKERHUB_REPOSITORY: ${{ secrets.DOCKER_USERNAME }}/${{ secrets.DOCKER_REPO }}
+      VERSION: ${{ needs.Check-version.outputs.main_next_new }}
+
+    steps:
+      - name: Checkout code
+        if: ${{ env.VERSION != '' }}
+        uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+
+      - name: Set up QEMU
+        if: ${{ env.VERSION != '' }}
+        uses: docker/setup-qemu-action@v3.0.0
+
+      - name: Set up Docker Buildx
+        if: ${{ env.VERSION != '' }}
+        uses: docker/setup-buildx-action@v3.0.0
+
+      - name: Login to DockerHub
+        if: ${{ env.VERSION != '' }}
+        uses: docker/login-action@v3.0.0
+        with:
+          username: ${{ env.DOCKER_USERNAME }}
+          password: ${{ env.DOCKER_PASSWORD }}
+
+      - name: Push images to Docker hub
+        if: ${{ env.VERSION != '' }}
+        uses: docker/build-push-action@v5.1.0
+        with:
+          push: true
+          platforms: linux/i386, linux/amd64, linux/arm/v7, linux/arm64
+          build-args: BRANCH=${{ env.VERSION }}
+          tags: |
+            ${{ env.DOCKERHUB_REPOSITORY }}:latest
+            ${{ env.DOCKERHUB_REPOSITORY }}:${{ env.VERSION }}
+  # =============================================================================================================================================================================================
+  Build-main-next-releases:
+    needs: Check-version
+    runs-on: ubuntu-latest
+    name: Build main-next releases
+    env:
+      CGO_ENABLED: 0
+      BINARY: sing-box
+      VERSION: ${{ needs.Check-version.outputs.main_next_new }}
+      GO_VERSION: ${{ needs.Check-version.outputs.go_version }}
+
+    strategy:
+      matrix:
+        goos: [linux, windows, darwin]
+        goarch: ["386", amd64, arm, arm64]
+        exclude:
+          - goarch: 386
+            goos: linux
+          - goarch: arm
+            goos: linux
+          - goarch: "386"
+            goos: darwin
+          - goarch: "arm"
+            goos: darwin
+          - goarch: "386"
+            goos: windows
+          - goarch: arm
+            goos: windows
+
+    steps:
+      - name: Checkout code
+        if: ${{ env.VERSION != '' }}
+        uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+
+      - name: Git clone repository
+        if: ${{ env.VERSION != '' }}
+        uses: actions/checkout@v4
+        with:
+          repository: "SagerNet/sing-box"
+          ref: "${{ env.VERSION }}"
+          fetch-depth: 1
+
+      - name: Build main-next releases
+        if: ${{ env.VERSION != '' }}
+        uses: fscarmen/go-release-action@v1.0.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }} # 你的 GITHUB_TOKEN 用于将版本上传到 Github Release。
+          goos: ${{ matrix.goos }} # 运行程序的操作系统
+          goarch: ${{ matrix.goarch }} # 运行程序的架构
+          goversion: ${{ env.GO_VERSION }} # Go 编译环境版本
+          project_path: "./cmd/sing-box" # 在哪里运行 go build 命令。
+          binary_name: "${{ env.BINARY }}" # 二进制名称
+          build_flags: "-trimpath -tags with_quic,with_grpc,with_dhcp,with_wireguard,with_ech,with_utls,with_reality_server,with_acme,with_clash_api,with_gvisor" # 传递给 go build 命令的其他参数
+          ldflags: -s -w --extldflags '-static -fpic' -X github.com/sagernet/sing-box/constant.Version=${{ env.VERSION }} # ldflags参数
+          md5sum: "false"
+          release_tag: "${{ env.VERSION }}" # 上传的标签
+          release_name: "${{ env.VERSION }}" # 上传的名字
+          compress_assets: "auto" # 自定义打包
+          overwrite: true # 覆盖
+          asset_name: "${{ env.BINARY }}-${{ matrix.goos }}-${{ matrix.goarch }}" # 自定义名称
+  # =============================================================================================================================================================================================
+  Build-dev-next-image:
+    needs: Check-version
+    runs-on: ubuntu-latest
+    name: "Build dev-next image"
+    env:
+      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+      DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+      DOCKERHUB_REPOSITORY: ${{ secrets.DOCKER_USERNAME }}/${{ secrets.DOCKER_REPO }}
+      VERSION: ${{ needs.Check-version.outputs.dev_next_new }}
+
+    steps:
+      - name: Checkout code
+        if: ${{ env.VERSION != '' }}
+        uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+
+      - name: Set up QEMU
+        if: ${{ env.VERSION != '' }}
+        uses: docker/setup-qemu-action@v3.0.0
+
+      - name: Set up Docker Buildx
+        if: ${{ env.VERSION != '' }}
+        uses: docker/setup-buildx-action@v3.0.0
+
+      - name: Login to DockerHub
+        if: ${{ env.VERSION != '' }}
+        uses: docker/login-action@v3.0.0
+        with:
+          username: ${{ env.DOCKER_USERNAME }}
+          password: ${{ env.DOCKER_PASSWORD }}
+
+      - name: Push images to Docker hub
+        if: ${{ env.VERSION != '' }}
+        uses: docker/build-push-action@v5.1.0
+        with:
+          push: true
+          platforms: linux/i386, linux/amd64, linux/arm/v7, linux/arm64
+          build-args: BRANCH=${{ env.VERSION }}
+          tags: |
+            ${{ env.DOCKERHUB_REPOSITORY }}:dev-next
+            ${{ env.DOCKERHUB_REPOSITORY }}:${{ env.VERSION }}
+  # =============================================================================================================================================================================================
+  Build-dev-next-releases:
+    needs: Check-version
+    runs-on: ubuntu-latest
+    name: Build dev-next releases
+    env:
+      CGO_ENABLED: 0
+      BINARY: sing-box
+      VERSION: ${{ needs.Check-version.outputs.dev_next_new }}
+      GO_VERSION: ${{ needs.Check-version.outputs.go_version }}
+
+    strategy:
+      matrix:
+        goos: [linux, windows, darwin]
+        goarch: ["386", amd64, arm, arm64]
+        exclude:
+          - goarch: 386
+            goos: linux
+          - goarch: arm
+            goos: linux
+          - goarch: "386"
+            goos: darwin
+          - goarch: "arm"
+            goos: darwin
+          - goarch: "386"
+            goos: windows
+          - goarch: arm
+            goos: windows
+
+    steps:
+      - name: Checkout code
+        if: ${{ env.VERSION != '' }}
+        uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+
+      - name: Git clone repository
+        if: ${{ env.VERSION != '' }}
+        uses: actions/checkout@v4
+        with:
+          repository: "SagerNet/sing-box"
+          ref: "${{ env.VERSION }}"
+          fetch-depth: 1
+
+      - name: Build dev-next releases
+        if: ${{ env.VERSION != '' }}
+        uses: fscarmen/go-release-action@v1.0.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }} # 你的 GITHUB_TOKEN 用于将版本上传到 Github Release。
+          goos: ${{ matrix.goos }} # 运行程序的操作系统
+          goarch: ${{ matrix.goarch }} # 运行程序的架构
+          goversion: ${{ env.GO_VERSION }} # Go 编译环境版本
+          project_path: "./cmd/sing-box" # 在哪里运行 go build 命令。
+          binary_name: "${{ env.BINARY }}" # 二进制名称
+          build_flags: "-trimpath -tags with_quic,with_grpc,with_dhcp,with_wireguard,with_ech,with_utls,with_reality_server,with_acme,with_clash_api,with_gvisor" # 传递给 go build 命令的其他参数
+          ldflags: -s -w -X github.com/sagernet/sing-box/constant.Version=${{ env.VERSION }} # ldflags参数
+          md5sum: "false"
+          release_tag: "${{ env.VERSION }}" # 上传的标签
+          release_name: "${{ env.VERSION }}" # 上传的名字
+          compress_assets: "auto" # 自定义打包
+          overwrite: true # 覆盖
+          asset_name: "${{ env.BINARY }}-${{ matrix.goos }}-${{ matrix.goarch }}" # 自定义名称
+  # =============================================================================================================================================================================================
+  Mark-image-version:
+    needs:
+      - Check-version
+      - Create-release
+      - Build-main-next-image
+      - Build-main-next-releases
+      - Build-dev-next-image
+      - Build-dev-next-releases
+    runs-on: ubuntu-latest
+    name: "Mark the image version"
+    env:
+      MAIN_NEXT_NOW: ${{ needs.Check-version.outputs.main_next_now }}
+      MAIN_NEXT_NEW: ${{ needs.Check-version.outputs.main_next_new }}
+      MAIN_NEXT_RENEW: ${{ needs.Check-version.outputs.main_next_renew }}
+      DEV_NEXT_NOW: ${{ needs.Check-version.outputs.dev_next_now }}
+      DEV_NEXT_NEW: ${{ needs.Check-version.outputs.dev_next_new }}
+      DEV_NEXT_RENEW: ${{ needs.Check-version.outputs.dev_next_renew }}
+      COMMIT: ${{ needs.Check-version.outputs.commit }}
+
+    steps:
+      - name: checkout
+        if: ${{ env.COMMIT != '' }}
+        uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+
+      - name: Check and Mark
+        if: ${{ env.COMMIT != '' }}
+        run: |
+          if [ "${{ env.MAIN_NEXT_RENEW }}" == '1' ]; then
+            sed -i "s/\(latest.*:\).*/\1 ${{ env.MAIN_NEXT_NEW }}/" README.md
+          fi
+
+          if [ "${{ env.DEV_NEXT_RENEW }}" == '1' ]; then
+            sed -i "s/\(dev.*:\).*/\1 ${{ env.DEV_NEXT_NEW }}/" README.md
+          fi
+
+          git checkout --orphan tmp_work
+          git branch -d main
+
+      - name: Upload to repository
+        if: ${{ env.COMMIT != '' }}
+        uses: stefanzweifel/git-auto-commit-action@v4.16.0
+        with:
+          commit_message: ${{ env.COMMIT }}
+          create_branch: true
+          branch: main
+          push_options: --force
+
+      - name: Delete old workflow runs
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          retain_days: 0
+          keep_minimum_runs: 0
+          delete_run_by_conclusion_pattern: "cancelled, skipped, success"
