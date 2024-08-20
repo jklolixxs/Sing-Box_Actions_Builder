@@ -22,7 +22,9 @@ jobs:
       dev_next_new: ${{ steps.get-version.outputs.dev_next_new }}
       dev_next_renew: ${{ steps.get-version.outputs.dev_next_renew }}
       commit: ${{ steps.get-version.outputs.commit }}
-      go_version: ${{ steps.get-version.outputs.go_version }}
+      # go_version: ${{ steps.get-version.outputs.go_version }}
+      main_next_go_version: ${{ steps.get-version.outputs.main_next_go_version }}
+      dev_next_go_version: ${{ steps.get-version.outputs.dev_next_go_version }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4.1.1
@@ -39,7 +41,8 @@ jobs:
           MAIN_NEXT_NEW=$(grep -vm1 '-' <<< "$LIST")
           DEV_NEXT_NEW=$(grep -m1 '-' <<< "$LIST")
           # GO_VERSION=$(curl -s https://go.dev/VERSION?m=text | awk 'NR==1' | sed 's/^go//')
-          GO_VERSION=1.22
+          MAIN_NEXT_GO_VERSION=$(curl -s https://raw.githubusercontent.com/SagerNet/sing-box/main-next/Dockerfile | awk 'NR==1' | sed -n 's/.*golang:\(.*\)-alpine.*/\1/p')
+          DEV_NEXT_GO_VERSION=$(curl -s https://raw.githubusercontent.com/SagerNet/sing-box/dev-next/Dockerfile | awk 'NR==1' | sed -n 's/.*golang:\(.*\)-alpine.*/\1/p')
 
           echo "MAIN_NEXT_NOW: $MAIN_NEXT_NOW"
           echo "MAIN_NEXT_NEW: $MAIN_NEXT_NEW"
@@ -57,12 +60,15 @@ jobs:
             echo "main_next_now=$MAIN_NEXT_NOW" >> $GITHUB_OUTPUT
             echo "main_next_new=$MAIN_NEXT_NEW" >> $GITHUB_OUTPUT
             echo "main_next_renew=$MAIN_NEXT_RENEW" >> $GITHUB_OUTPUT
-            echo "go_version=$GO_VERSION" >> $GITHUB_OUTPUT
+            # echo "go_version=$GO_VERSION" >> $GITHUB_OUTPUT
+            echo "main_next_go_version=$MAIN_NEXT_GO_VERSION" >> $GITHUB_OUTPUT
           fi
           if [ "$DEV_NEXT_NOW" != "$DEV_NEXT_NEW" ]; then
             echo "dev_next_now=$DEV_NEXT_NOW" >> $GITHUB_OUTPUT
             echo "dev_next_new=$DEV_NEXT_NEW" >> $GITHUB_OUTPUT
             echo "dev_next_renew=$DEV_NEXT_RENEW" >> $GITHUB_OUTPUT
+            # echo "go_version=$GO_VERSION" >> $GITHUB_OUTPUT
+            echo "dev_next_go_version=$DEV_NEXT_GO_VERSION" >> $GITHUB_OUTPUT
           fi
 
           DATE=$(date "+%Y/%m/%d")
@@ -167,7 +173,7 @@ jobs:
       CGO_ENABLED: 0
       BINARY: sing-box
       VERSION: ${{ needs.Check-version.outputs.main_next_new }}
-      GO_VERSION: ${{ needs.Check-version.outputs.go_version }}
+      MAIN_NEXT_GO_VERSION: ${{ needs.Check-version.outputs.main_next_go_version }}
 
     strategy:
       matrix:
@@ -204,13 +210,13 @@ jobs:
 
       - name: Build main-next releases
         if: ${{ env.VERSION != '' }}
-        # uses: fscarmen/go-release-action@v1.0.0
-        uses: wangyoucao577/go-release-action@v1
+        uses: fscarmen/go-release-action@v1.0.0
+        # uses: wangyoucao577/go-release-action@v1
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }} # 你的 GITHUB_TOKEN 用于将版本上传到 Github Release。
           goos: ${{ matrix.goos }} # 运行程序的操作系统
           goarch: ${{ matrix.goarch }} # 运行程序的架构
-          goversion: ${{ env.GO_VERSION }} # Go 编译环境版本
+          goversion: ${{ env.MAIN_NEXT_GO_VERSION }} # Go 编译环境版本
           project_path: "./cmd/sing-box" # 在哪里运行 go build 命令。
           binary_name: "${{ env.BINARY }}" # 二进制名称
           build_flags: "-trimpath -tags with_quic,with_grpc,with_dhcp,with_wireguard,with_ech,with_utls,with_reality_server,with_acme,with_clash_api,with_gvisor" # 传递给 go build 命令的其他参数
@@ -273,7 +279,7 @@ jobs:
       CGO_ENABLED: 0
       BINARY: sing-box
       VERSION: ${{ needs.Check-version.outputs.dev_next_new }}
-      GO_VERSION: ${{ needs.Check-version.outputs.go_version }}
+      DEV_NEXT_GO_VERSION: ${{ needs.Check-version.outputs.dev_next_go_version }}
 
     strategy:
       matrix:
@@ -310,13 +316,13 @@ jobs:
 
       - name: Build dev-next releases
         if: ${{ env.VERSION != '' }}
-        # uses: fscarmen/go-release-action@v1.0.0
-        uses: wangyoucao577/go-release-action@v1
+        uses: fscarmen/go-release-action@v1.0.0
+        # uses: wangyoucao577/go-release-action@v1
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }} # 你的 GITHUB_TOKEN 用于将版本上传到 Github Release。
           goos: ${{ matrix.goos }} # 运行程序的操作系统
           goarch: ${{ matrix.goarch }} # 运行程序的架构
-          goversion: ${{ env.GO_VERSION }} # Go 编译环境版本
+          goversion: ${{ env.DEV_NEXT_GO_VERSION }} # Go 编译环境版本
           project_path: "./cmd/sing-box" # 在哪里运行 go build 命令。
           binary_name: "${{ env.BINARY }}" # 二进制名称
           build_flags: "-trimpath -tags with_quic,with_grpc,with_dhcp,with_wireguard,with_ech,with_utls,with_reality_server,with_acme,with_clash_api,with_gvisor" # 传递给 go build 命令的其他参数
