@@ -22,7 +22,6 @@ jobs:
       dev_next_new: ${{ steps.get-version.outputs.dev_next_new }}
       dev_next_renew: ${{ steps.get-version.outputs.dev_next_renew }}
       commit: ${{ steps.get-version.outputs.commit }}
-      # go_version: ${{ steps.get-version.outputs.go_version }}
       main_next_go_version: ${{ steps.get-version.outputs.main_next_go_version }}
       dev_next_go_version: ${{ steps.get-version.outputs.dev_next_go_version }}
     steps:
@@ -64,6 +63,7 @@ jobs:
           echo "MAIN_NEXT_GO_VERSION: $MAIN_NEXT_GO_VERSION"
           echo "DEV_NEXT_NOW: $DEV_NEXT_NOW"
           echo "DEV_NEXT_NEW: $DEV_NEXT_NEW"
+          echo "DEV_NEXT_GO_VERSION: $DEV_NEXT_GO_VERSION"
 
           if [ "$MAIN_NEXT_NOW" != "$MAIN_NEXT_NEW" ]; then
             MAIN_NEXT_RENEW=1
@@ -76,14 +76,12 @@ jobs:
             echo "main_next_now=$MAIN_NEXT_NOW" >> $GITHUB_OUTPUT
             echo "main_next_new=$MAIN_NEXT_NEW" >> $GITHUB_OUTPUT
             echo "main_next_renew=$MAIN_NEXT_RENEW" >> $GITHUB_OUTPUT
-            # echo "go_version=$GO_VERSION" >> $GITHUB_OUTPUT
             echo "main_next_go_version=$MAIN_NEXT_GO_VERSION" >> $GITHUB_OUTPUT
           fi
           if [ "$DEV_NEXT_NOW" != "$DEV_NEXT_NEW" ]; then
             echo "dev_next_now=$DEV_NEXT_NOW" >> $GITHUB_OUTPUT
             echo "dev_next_new=$DEV_NEXT_NEW" >> $GITHUB_OUTPUT
             echo "dev_next_renew=$DEV_NEXT_RENEW" >> $GITHUB_OUTPUT
-            # echo "go_version=$GO_VERSION" >> $GITHUB_OUTPUT
             echo "dev_next_go_version=$DEV_NEXT_GO_VERSION" >> $GITHUB_OUTPUT
           fi
 
@@ -227,7 +225,6 @@ jobs:
       - name: Build main-next releases
         if: ${{ env.VERSION != '' }}
         uses: fscarmen/go-release-action@v1.0.0
-        # uses: wangyoucao577/go-release-action@v1
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }} # 你的 GITHUB_TOKEN 用于将版本上传到 Github Release。
           goos: ${{ matrix.goos }} # 运行程序的操作系统
@@ -333,7 +330,6 @@ jobs:
       - name: Build dev-next releases
         if: ${{ env.VERSION != '' }}
         uses: fscarmen/go-release-action@v1.0.0
-        # uses: wangyoucao577/go-release-action@v1
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }} # 你的 GITHUB_TOKEN 用于将版本上传到 Github Release。
           goos: ${{ matrix.goos }} # 运行程序的操作系统
