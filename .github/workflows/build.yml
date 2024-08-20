@@ -41,11 +41,27 @@ jobs:
           MAIN_NEXT_NEW=$(grep -vm1 '-' <<< "$LIST")
           DEV_NEXT_NEW=$(grep -m1 '-' <<< "$LIST")
           # GO_VERSION=$(curl -s https://go.dev/VERSION?m=text | awk 'NR==1' | sed 's/^go//')
-          MAIN_NEXT_GO_VERSION=$(curl -s https://raw.githubusercontent.com/SagerNet/sing-box/main-next/Dockerfile | awk 'NR==1' | sed -n 's/.*golang:\(.*\)-alpine.*/\1/p')
-          DEV_NEXT_GO_VERSION=$(curl -s https://raw.githubusercontent.com/SagerNet/sing-box/dev-next/Dockerfile | awk 'NR==1' | sed -n 's/.*golang:\(.*\)-alpine.*/\1/p')
+
+          MAIN_NEXT_GO_VERSION_TEST=$(curl -s https://raw.githubusercontent.com/SagerNet/sing-box/main-next/Dockerfile | awk 'NR==1' | sed -n 's/.*golang:\(.*\)-alpine.*/\1/p')
+          if [[ $(grep -o "\." <<< "$MAIN_NEXT_GO_VERSION_TEST" | wc -l) -eq 1 ]]; then
+              MAIN_NEXT_GO_VERSION_TEMP=$(curl -s "https://go.dev/dl/?mode=json" | jq -r --arg version "go$MAIN_NEXT_GO_VERSION_TEST" '.[] | select(.version | startswith($version)) | .version' | sort -V | tail -n 1)
+              MAIN_NEXT_GO_VERSION=${MAIN_NEXT_GO_VERSION_TEMP#go}
+          else
+              MAIN_NEXT_GO_VERSION=$MAIN_NEXT_GO_VERSION_TEST
+          fi
+
+          DEV_NEXT_GO_VERSION_TEST=$(curl -s https://raw.githubusercontent.com/SagerNet/sing-box/dev-next/Dockerfile | awk 'NR==1' | sed -n 's/.*golang:\(.*\)-alpine.*/\1/p')
+          if [[ $(grep -o "\." <<< "$DEV_NEXT_GO_VERSION_TEST" | wc -l) -eq 1 ]]; then
+              DEV_NEXT_GO_VERSION_TEMP=$(curl -s "https://go.dev/dl/?mode=json" | jq -r --arg version "go$DEV_NEXT_GO_VERSION_TEST" '.[] | select(.version | startswith($version)) | .version' | sort -V | tail -n 1)
+              DEV_NEXT_GO_VERSION=${MAIN_NEXT_GO_VERSION_TEMP#go}
+          else
+              DEV_NEXT_GO_VERSION=$DEV_NEXT_GO_VERSION_TEST
+          fi
+
 
           echo "MAIN_NEXT_NOW: $MAIN_NEXT_NOW"
           echo "MAIN_NEXT_NEW: $MAIN_NEXT_NEW"
+          echo "MAIN_NEXT_GO_VERSION: $MAIN_NEXT_GO_VERSION"
           echo "DEV_NEXT_NOW: $DEV_NEXT_NOW"
           echo "DEV_NEXT_NEW: $DEV_NEXT_NEW"
 
